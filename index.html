@@ -70,7 +70,7 @@
     .header-right {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
       margin-left: auto;
     }
 
@@ -99,9 +99,33 @@
       color: var(--text);
       font-weight: 700;
       white-space: nowrap;
+      max-width: 150px;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .status-pill.rec { background: var(--danger); animation: pulse 1.2s infinite; }
     .status-pill.drive { background: var(--success); color: #052e16; }
+
+    /* Mały przycisk ustawień (trybik) w nagłówku */
+    .btn-admin-gear {
+      flex: none;
+      width: 40px;
+      height: 40px;
+      min-height: 40px;
+      padding: 0;
+      border-radius: 10px;
+      background: #0f172a;
+      border: 1px solid #475569;
+      color: #cbd5e1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .btn-admin-gear:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
 
     @keyframes pulse {
       0%, 100% { opacity: 1; }
@@ -208,12 +232,11 @@
 
     .btn-start { background: var(--success); color: #052e16; }
     .btn-stop { background: var(--danger); }
+    .btn-info { background: var(--info); color: #082f49; }
     .btn-del {
-      flex: 0 0 52px;
-      background: #334155;
-      color: #fca5a5;
-      padding: 0;
-      font-size: 1.15rem;
+      background: #7f1d1d;
+      color: #fecaca;
+      border: 1px solid #ef4444;
     }
     .btn-voice {
       background: var(--accent);
@@ -264,29 +287,70 @@
       min-height: auto;
     }
 
-    /* Modal zapisu */
-    #saveModal {
+    /* Modale (zapis trasy + panel administratora) */
+    .modal-backdrop {
       display: none;
       position: fixed;
       inset: 0;
-      background: rgba(0,0,0,0.82);
+      background: rgba(0,0,0,0.84);
       align-items: center;
       justify-content: center;
-      padding: 20px;
+      padding: 16px;
       z-index: 999;
     }
     .modal-card {
       background: var(--panel);
-      padding: 20px;
+      padding: 18px;
       border-radius: 16px;
       width: 100%;
-      max-width: 420px;
+      max-width: 460px;
+      max-height: 90dvh;
+      overflow-y: auto;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 14px;
       border: 1px solid #475569;
     }
-    .modal-card h3 { margin: 0; }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #334155;
+      padding-bottom: 10px;
+    }
+    .modal-header h3 {
+      margin: 0;
+      font-size: 1.1rem;
+    }
+    .btn-close-modal {
+      flex: none;
+      min-height: 36px;
+      padding: 6px 12px;
+      font-size: 0.9rem;
+      background: #334155;
+    }
+    .admin-section {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .admin-section-title {
+      font-size: 0.78rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--accent);
+    }
+    .admin-hint {
+      margin: 0;
+      font-size: 0.82rem;
+      color: var(--muted);
+      line-height: 1.35;
+    }
   </style>
 </head>
 <body>
@@ -322,6 +386,12 @@
       <div class="km-box"><span id="kmDisplay">0.00</span> km</div>
     </div>
     <div id="statusBadge" class="status-pill">Gotowy</div>
+    <button id="btnOpenAdmin" type="button" class="btn-admin-gear" title="Ustawienia tras (Administrator)" aria-label="Ustawienia tras">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"></circle>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+      </svg>
+    </button>
   </div>
 </header>
 
@@ -337,17 +407,15 @@
 <div class="controls">
   <div id="notesBar" class="notes-bar"></div>
 
-  <!-- Wybór zapisanej trasy do jazdy -->
+  <!-- Widok kierowcy: tylko wybór zapisanej trasy i start jazdy -->
   <div class="row" id="idleControls">
     <select id="savedRoutesSelect">
       <option value="">-- Wybierz zapisaną trasę --</option>
     </select>
-    <button id="btnDeleteRoute" class="btn-del" title="Usuń wybraną trasę">🗑️</button>
-    <button id="btnLoadRoute" style="flex: 0.75; background: var(--info); color: #082f49;">Jedź trasą</button>
-    <button id="btnNewRoute" class="btn-start" style="flex: 0.95;">+ Nagraj nową</button>
+    <button id="btnLoadRoute" class="btn-start" style="flex: 0.75;">▶ Jedź trasą</button>
   </div>
 
-  <!-- Sterowanie podczas nagrywania nowej trasy -->
+  <!-- Sterowanie podczas nagrywania nowej trasy (uruchamiane z ustawień) -->
   <div id="recordControls" style="display: none; flex-direction: column; gap: 10px;">
     <button id="btnRecordVoice" class="btn-voice">
       🎙️ PRZYTRZYMAJ ABY NAGRAĆ GŁOS (km <span id="btnKm">0.00</span>)
@@ -367,8 +435,8 @@
   </div>
 </div>
 
-<!-- Okno zapisu trasy -->
-<div id="saveModal">
+<!-- Okno zapisu nowej trasy -->
+<div id="saveModal" class="modal-backdrop">
   <div class="modal-card">
     <h3>Zapisz przejechaną trasę</h3>
     <p style="margin:0; color: var(--muted); font-size: 0.9rem;">
@@ -378,6 +446,43 @@
     <div class="row">
       <button id="btnCancelSave">Odrzuć</button>
       <button id="btnConfirmSave" class="btn-start">Zapisz trasę</button>
+    </div>
+  </div>
+</div>
+
+<!-- Panel Ustawień / Administratora -->
+<div id="adminModal" class="modal-backdrop">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h3>⚙️ Ustawienia i zarządzanie trasami</h3>
+      <button id="btnCloseAdmin" type="button" class="btn-close-modal">Zamknij</button>
+    </div>
+
+    <!-- Sekcja 1: Rejestracja nowej trasy -->
+    <div class="admin-section">
+      <div class="admin-section-title">1. Rejestracja trasy</div>
+      <p class="admin-hint">Przejedź odcinek i nagraj komentarze głosowe w newralgicznych miejscach.</p>
+      <button id="btnNewRoute" class="btn-start">+ Nagraj nową trasę</button>
+    </div>
+
+    <!-- Sekcja 2: Kopia zapasowa i przenoszenie na inne urządzenia -->
+    <div class="admin-section">
+      <div class="admin-section-title">2. Kopia zapasowa / Przenoszenie tras</div>
+      <p class="admin-hint">Wyeksportuj trasy wraz z nagraniami głosowymi do pliku JSON, aby wgrać je na telefon innego kierowcy.</p>
+      <div class="row">
+        <button id="btnExportRoutes" class="btn-info">📤 Eksportuj trasy</button>
+        <button id="btnImportRoutes" style="background: #334155;">📥 Importuj z pliku</button>
+      </div>
+      <input type="file" id="importFileInput" accept=".json,application/json" style="display: none;" />
+    </div>
+
+    <!-- Sekcja 3: Usuwanie zapisanej trasy -->
+    <div class="admin-section">
+      <div class="admin-section-title">3. Usuwanie trasy z pamięci urządzenia</div>
+      <select id="adminRoutesSelect">
+        <option value="">-- Wybierz trasę do usunięcia --</option>
+      </select>
+      <button id="btnDeleteRoute" class="btn-del">🗑️ Usuń wybraną trasę</button>
     </div>
   </div>
 </div>
@@ -435,6 +540,32 @@
       req.onsuccess = () => resolve(req.result);
       req.onerror = (e) => reject(e);
     });
+  }
+
+  // Konwersja Blob <-> Base64 dla eksportu/importu JSON
+  function blobToDataURL(blob) {
+    return new Promise((resolve, reject) => {
+      if (!blob) return resolve(null);
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  function dataURLToBlob(dataUrl) {
+    if (!dataUrl || typeof dataUrl !== 'string') return null;
+    const parts = dataUrl.split(',');
+    if (parts.length < 2) return null;
+    const mimeMatch = parts[0].match(/:(.*?);/);
+    const mime = mimeMatch ? mimeMatch[1] : 'audio/webm';
+    const bstr = atob(parts[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new Blob([u8arr], { type: mime });
   }
 
   // ==========================================
@@ -613,6 +744,7 @@
   }
 
   function startRecordingRoute() {
+    document.getElementById('adminModal').style.display = 'none';
     mode = 'RECORDING';
     recordedPoints = [];
     voiceNotes = [];
@@ -641,7 +773,6 @@
   function handleNewGpsPoint(lat, lng, accuracy = null, options = {}) {
     const { allowLowAccuracy = false } = options;
 
-    // Odrzucaj bardzo niedokładne punkty z sieci/Wi-Fi podczas ciągłego śledzenia
     if (accuracy !== null && !allowLowAccuracy && accuracy > 80) {
       return;
     }
@@ -761,6 +892,7 @@
   }
 
   function playAudioNote(note) {
+    if (!note.audioBlob) return;
     const url = URL.createObjectURL(note.audioBlob);
     const audio = new Audio(url);
     const banner = document.getElementById('voiceAlertBanner');
@@ -801,7 +933,7 @@
     });
     document.getElementById('routeNameInput').value = '';
     document.getElementById('saveModal').style.display = 'none';
-    await refreshSavedRoutesDropdown();
+    await refreshSavedRoutesDropdowns();
     resetToIdle();
   };
 
@@ -820,29 +952,149 @@
   }
 
   // ==========================================
-  // 7. TRYB KIEROWCY (ODTWARZANIE TRASY)
+  // 7. PANEL ADMINISTRATORA (EKSPORT / IMPORT / USUWANIE)
   // ==========================================
-  async function refreshSavedRoutesDropdown() {
+  async function refreshSavedRoutesDropdowns() {
     const routes = await getAllRoutesFromDB();
-    const sel = document.getElementById('savedRoutesSelect');
-    sel.innerHTML = '<option value="">-- Wybierz zapisaną trasę --</option>';
+    const driverSel = document.getElementById('savedRoutesSelect');
+    const adminSel = document.getElementById('adminRoutesSelect');
+
+    driverSel.innerHTML = '<option value="">-- Wybierz zapisaną trasę --</option>';
+    adminSel.innerHTML = '<option value="">-- Wybierz trasę do usunięcia --</option>';
+
     routes.forEach(r => {
-      const opt = document.createElement('option');
-      opt.value = r.id;
-      opt.textContent = `${r.name} (${r.totalKm} km, ${r.notes.length} głos.)`;
-      sel.appendChild(opt);
+      const label = `${r.name} (${r.totalKm} km, ${r.notes.length} głos.)`;
+
+      const opt1 = document.createElement('option');
+      opt1.value = r.id;
+      opt1.textContent = label;
+      driverSel.appendChild(opt1);
+
+      const opt2 = document.createElement('option');
+      opt2.value = r.id;
+      opt2.textContent = label;
+      adminSel.appendChild(opt2);
     });
   }
 
+  document.getElementById('btnOpenAdmin').onclick = async () => {
+    if (mode !== 'IDLE') {
+      return alert('Zakończ najpierw bieżącą jazdę lub nagrywanie trasy, aby otworzyć ustawienia.');
+    }
+    await refreshSavedRoutesDropdowns();
+    document.getElementById('adminModal').style.display = 'flex';
+  };
+
+  document.getElementById('btnCloseAdmin').onclick = () => {
+    document.getElementById('adminModal').style.display = 'none';
+  };
+
   document.getElementById('btnDeleteRoute').onclick = async () => {
-    const id = Number(document.getElementById('savedRoutesSelect').value);
-    if (!id) return alert('Wybierz trasę z listy, aby ją usunąć.');
-    if (confirm('Usunąć wybraną trasę z pamięci urządzenia?')) {
+    const id = Number(document.getElementById('adminRoutesSelect').value);
+    if (!id) return alert('Wybierz trasę z listy w ustawieniach, aby ją usunąć.');
+    if (confirm('Czy na pewno trwale usunąć wybraną trasę z tego urządzenia?')) {
       await deleteRouteFromDB(id);
-      await refreshSavedRoutesDropdown();
+      await refreshSavedRoutesDropdowns();
     }
   };
 
+  // Eksport wszystkich tras + nagrań audio do pliku JSON
+  document.getElementById('btnExportRoutes').onclick = async () => {
+    const routes = await getAllRoutesFromDB();
+    if (!routes.length) {
+      return alert('Brak zapisanych tras do wyeksportowania.');
+    }
+
+    const exportedRoutes = [];
+    for (const r of routes) {
+      const serializedNotes = [];
+      for (const n of (r.notes || [])) {
+        const audioDataUrl = await blobToDataURL(n.audioBlob);
+        serializedNotes.push({
+          km: n.km,
+          lat: n.lat,
+          lng: n.lng,
+          audioDataUrl
+        });
+      }
+      exportedRoutes.push({
+        name: r.name,
+        createdAt: r.createdAt,
+        totalKm: r.totalKm,
+        points: r.points,
+        notes: serializedNotes
+      });
+    }
+
+    const payload = {
+      app: 'Akcja Zima 2026/2027',
+      exportedAt: new Date().toISOString(),
+      routes: exportedRoutes
+    };
+
+    const jsonBlob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(jsonBlob);
+    const a = document.createElement('a');
+    const dateStamp = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `trasy-akcja-zima-${dateStamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  // Import tras z pliku JSON
+  document.getElementById('btnImportRoutes').onclick = () => {
+    document.getElementById('importFileInput').click();
+  };
+
+  document.getElementById('importFileInput').onchange = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const list = Array.isArray(parsed) ? parsed : parsed.routes;
+
+      if (!Array.isArray(list) || list.length === 0) {
+        alert('Wybrany plik nie zawiera żadnych tras.');
+        return;
+      }
+
+      let importedCount = 0;
+      for (const item of list) {
+        if (!item.name || !Array.isArray(item.points)) continue;
+        const restoredNotes = (item.notes || []).map(n => ({
+          km: n.km,
+          lat: n.lat,
+          lng: n.lng,
+          audioBlob: dataURLToBlob(n.audioDataUrl)
+        }));
+
+        await saveRouteToDB({
+          name: item.name,
+          createdAt: item.createdAt || new Date().toISOString(),
+          totalKm: Number(item.totalKm || 0),
+          points: item.points,
+          notes: restoredNotes
+        });
+        importedCount++;
+      }
+
+      await refreshSavedRoutesDropdowns();
+      alert(`Zaimportowano tras: ${importedCount}.`);
+    } catch (err) {
+      alert('Błąd podczas importu pliku: ' + err.message);
+    } finally {
+      e.target.value = '';
+    }
+  };
+
+  // ==========================================
+  // 8. TRYB KIEROWCY (ODTWARZANIE TRASY)
+  // ==========================================
   document.getElementById('btnLoadRoute').onclick = async () => {
     const id = Number(document.getElementById('savedRoutesSelect').value);
     if (!id) return alert('Wybierz trasę z listy.');
@@ -908,7 +1160,7 @@
   };
 
   // ==========================================
-  // 8. SYMULATOR DO TESTÓW PRZY BIURKU
+  // 9. SYMULATOR DO TESTÓW PRZY BIURKU
   // ==========================================
   document.getElementById('btnSimStep').onclick = () => {
     simLat += 0.0011;
@@ -932,7 +1184,7 @@
   window.addEventListener('DOMContentLoaded', async () => {
     initMap();
     await initDB();
-    await refreshSavedRoutesDropdown();
+    await refreshSavedRoutesDropdowns();
   });
 </script>
 
