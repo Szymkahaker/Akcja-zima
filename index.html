@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Akcja Zima 2026/2027 – Asystent P³ugopiaskarki</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #1e293b;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #f59e0b;
+      --danger: #ef4444;
+      --success: #22c55e;
+      --info: #38bdf8;
+    }
+    * { box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      height: 100dvh;
+      overflow: hidden;
+    }
+
+    /* Górny pasek z logo i statusem */
+    header {
+      background: linear-gradient(180deg, #1e293b 0%, #162032 100%);
+      padding: 8px 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 2px solid #334155;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .brand-logo {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+    .brand-title {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.05;
+    }
+    .brand-main {
+      font-size: 0.95rem;
+      font-weight: 900;
+      letter-spacing: 0.8px;
+      color: #f8fafc;
+      text-transform: uppercase;
+    }
+    .brand-season {
+      font-size: 0.78rem;
+      font-weight: 800;
+      color: var(--accent);
+      letter-spacing: 0.6px;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-left: auto;
+    }
+
+    .km-wrapper {
+      text-align: right;
+    }
+    .km-label {
+      font-size: 0.65rem;
+      color: var(--muted);
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+    .km-box {
+      font-size: 1.35rem;
+      font-weight: 800;
+      color: var(--accent);
+      letter-spacing: 0.5px;
+      line-height: 1.1;
+    }
+
+    .status-pill {
+      font-size: 0.78rem;
+      padding: 5px 10px;
+      border-radius: 999px;
+      background: #334155;
+      color: var(--text);
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .status-pill.rec { background: var(--danger); animation: pulse 1.2s infinite; }
+    .status-pill.drive { background: var(--success); color: #052e16; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.55; }
+    }
+
+    /* Kontener mapy + ekran b³êdu */
+    .map-container {
+      position: relative;
+      flex: 1;
+      width: 100%;
+      background: #0b1120;
+    }
+    #map {
+      width: 100%;
+      height: 100%;
+    }
+    #mapErrorOverlay {
+      display: none;
+      position: absolute;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.94);
+      padding: 24px;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      z-index: 20;
+      gap: 10px;
+    }
+    #mapErrorOverlay h3 {
+      margin: 0;
+      color: var(--accent);
+      font-size: 1.15rem;
+    }
+    #mapErrorOverlay p {
+      margin: 0;
+      color: #cbd5e1;
+      font-size: 0.9rem;
+      max-width: 420px;
+      line-height: 1.45;
+    }
+
+    /* Alert dla kierowcy na ¿ywo */
+    #voiceAlertBanner {
+      display: none;
+      background: var(--accent);
+      color: #0f172a;
+      padding: 12px 16px;
+      font-weight: 800;
+      font-size: 1.05rem;
+      text-align: center;
+      border-top: 2px solid #fff;
+    }
+
+    /* Panel sterowania na dole */
+    .controls {
+      background: var(--panel);
+      padding: 12px;
+      border-top: 2px solid #334155;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    button, select, input {
+      border: none;
+      border-radius: 12px;
+      font-size: 1rem;
+      font-weight: 700;
+      padding: 13px 14px;
+    }
+    button {
+      cursor: pointer;
+      color: #fff;
+      background: #334155;
+      flex: 1;
+      min-height: 52px;
+      touch-action: manipulation;
+    }
+    button:active { transform: scale(0.98); }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .btn-start { background: var(--success); color: #052e16; }
+    .btn-stop { background: var(--danger); }
+    .btn-del {
+      flex: 0 0 52px;
+      background: #334155;
+      color: #fca5a5;
+      padding: 0;
+      font-size: 1.15rem;
+    }
+    .btn-voice {
+      background: var(--accent);
+      color: #0f172a;
+      font-size: 1.1rem;
+      min-height: 68px;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+      touch-action: none;
+    }
+    .btn-voice.recording {
+      background: var(--danger);
+      color: #fff;
+    }
+    .btn-sim {
+      background: #0284c7;
+      font-size: 0.85rem;
+      min-height: 42px;
+      padding: 8px 12px;
+    }
+
+    select, input {
+      background: #0f172a;
+      color: var(--text);
+      border: 1px solid #475569;
+      flex: 1;
+      min-width: 0;
+    }
+
+    /* Lista punktów g³osowych */
+    .notes-bar {
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+    }
+    .note-chip {
+      background: #0f172a;
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      padding: 8px 12px;
+      border-radius: 999px;
+      font-size: 0.85rem;
+      white-space
