@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="pl">
 <head>
   <meta charset="UTF-8" />
@@ -119,6 +119,31 @@
       width: 100%;
       height: 100%;
       z-index: 1;
+    }
+
+    /* Przycisk odświeżania lokalizacji na mapie */
+    .btn-locate {
+      position: absolute;
+      right: 12px;
+      bottom: 14px;
+      z-index: 500;
+      background: #1e293b;
+      color: #f8fafc;
+      border: 2px solid #475569;
+      border-radius: 12px;
+      padding: 10px 13px;
+      font-size: 0.88rem;
+      font-weight: 800;
+      min-height: 44px;
+      flex: none;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.55);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn-locate.locating {
+      border-color: var(--info);
+      color: var(--info);
     }
 
     /* Własne znaczniki głosowe na mapie */
@@ -302,6 +327,9 @@
 
 <div class="map-container">
   <div id="map"></div>
+  <button id="btnRefreshLocation" type="button" class="btn-locate" title="Odśwież aktualną pozycję GPS">
+    🎯 <span id="locateLabel">Odśwież lokalizację</span>
+  </button>
 </div>
 
 <div id="voiceAlertBanner">🔊 Odtwarzam komunikat na km 0.00</div>
@@ -417,6 +445,7 @@
   let watchId = null;
   let wakeLock = null;
   let audioUnlocked = false;
+  let lastAccuracy = null;
 
   let mode = 'IDLE'; // 'IDLE' | 'RECORDING' | 'DRIVING'
   let recordedPoints = [];
@@ -432,16 +461,87 @@
   let simLng = 19.3220;
   let simDriveIndex = 0;
 
+  function applyPositionToMap(lat, lng, accuracy = null, centerMap = true, zoomLevel = null) {
+    simLat = lat;
+    simLng = lng;
+    if (accuracy !== null && !Number.isNaN(accuracy)) {
+      lastAccuracy = Math.round(accuracy);
+    }
+    if (vehicleMarker) {
+      vehicleMarker.setLatLng([lat, lng]);
+    }
+    if (map && centerMap) {
+      if (typeof zoomLevel === 'number') {
+        map.setView([lat, lng], zoomLevel);
+      } else {
+        map.panTo([lat, lng]);
+      }
+    }
+  }
+
+  function formatGpsErrorMessage(err) {
+    if (!err) return 'Nie udało się pobrać lokalizacji GPS.';
+    switch (err.code) {
+      case 1:
+        return 'Brak uprawnień do lokalizacji. Zezwól na dostęp do GPS w przeglądarce i systemie.';
+      case 2:
+        return 'Nie można ustalić pozycji GPS (słaby sygnał lub wyłączona lokalizacja).';
+      case 3:
+        return 'Przekroczono limit czasu oczekiwania na sygnał GPS.';
+      default:
+        return 'Błąd pobierania lokalizacji GPS.';
+    }
+  }
+
+  function refreshCurrentLocation(manual = false) {
+    const btn = document.getElementById('btnRefreshLocation');
+    const label = document.getElementById('locateLabel');
+
+    if (!navigator.geolocation) {
+      if (manual) alert('Twoja przeglądarka nie obsługuje geolokalizacji GPS.');
+      return;
+    }
+
+    if (btn) btn.classList.add('locating');
+    if (label && manual) label.textContent = 'Szukam GPS...';
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude, accuracy } = pos.coords;
+        applyPositionToMap(latitude, longitude, accuracy, true, manual ? 16 : 15);
+        handleNewGpsPoint(latitude, longitude, accuracy, { allowLowAccuracy: manual });
+
+        if (btn) btn.classList.remove('locating');
+        if (label) {
+          label.textContent = accuracy ? `GPS ±${Math.round(accuracy)}m` : 'Odśwież lokalizację';
+        }
+      },
+      (err) => {
+        if (btn) btn.classList.remove('locating');
+        if (label) label.textContent = 'Odśwież lokalizację';
+        console.warn('Błąd geolokalizacji:', err);
+        if (manual) {
+          alert(formatGpsErrorMessage(err));
+        }
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: manual ? 0 : 2000,
+        timeout: 12000
+      }
+    );
+  }
+
   function initMap() {
     map = L.map('map', {
       zoomControl: true,
       attributionControl: false
     }).setView([simLat, simLng], 15);
 
-    // Ciemny podkład drogowy (CartoDB Dark Matter) – zero kluczy API
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    // Standardowy podkład OpenStreetMap – działa bez klucza API
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
-      subdomains: 'abcd'
+      attribution: '&copy; OpenStreetMap'
     }).addTo(map);
 
     polyline = L.polyline([], {
@@ -458,14 +558,7 @@
       fillOpacity: 1
     }).addTo(map);
 
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition((pos) => {
-        simLat = pos.coords.latitude;
-        simLng = pos.coords.longitude;
-        map.setView([simLat, simLng], 15);
-        vehicleMarker.setLatLng([simLat, simLng]);
-      }, () => {});
-    }
+    refreshCurrentLocation(false);
   }
 
   // ==========================================
@@ -534,18 +627,30 @@
     badge.textContent = '● NAGRYWANIE';
     badge.className = 'status-pill rec';
 
+    refreshCurrentLocation(false);
+
     if (navigator.geolocation) {
       watchId = navigator.geolocation.watchPosition(
-        (pos) => handleNewGpsPoint(pos.coords.latitude, pos.coords.longitude),
-        (err) => console.error('Błąd GPS:', err),
-        { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
+        (pos) => handleNewGpsPoint(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy),
+        (err) => console.warn('Błąd GPS:', err),
+        { enableHighAccuracy: true, maximumAge: 500, timeout: 10000 }
       );
     }
   }
 
-  function handleNewGpsPoint(lat, lng) {
-    if (vehicleMarker) vehicleMarker.setLatLng([lat, lng]);
-    if (map) map.panTo([lat, lng]);
+  function handleNewGpsPoint(lat, lng, accuracy = null, options = {}) {
+    const { allowLowAccuracy = false } = options;
+
+    // Odrzucaj bardzo niedokładne punkty z sieci/Wi-Fi podczas ciągłego śledzenia
+    if (accuracy !== null && !allowLowAccuracy && accuracy > 80) {
+      return;
+    }
+
+    applyPositionToMap(lat, lng, accuracy, true);
+    const label = document.getElementById('locateLabel');
+    if (label && accuracy !== null && !Number.isNaN(accuracy)) {
+      label.textContent = `GPS ±${Math.round(accuracy)}m`;
+    }
 
     if (mode === 'RECORDING') {
       if (recordedPoints.length === 0) {
@@ -558,7 +663,7 @@
       const distKm = calcDistanceKm(last.lat, last.lng, lat, lng);
       const distMeters = distKm * 1000;
 
-      if (distMeters >= 5 && distMeters <= 150) {
+      if (distMeters >= 3 && distMeters <= 500) {
         totalKm += distKm;
         recordedPoints.push({ lat, lng, km: totalKm });
         if (polyline) polyline.addLatLng([lat, lng]);
@@ -777,9 +882,9 @@
 
     if (navigator.geolocation) {
       watchId = navigator.geolocation.watchPosition(
-        (pos) => handleNewGpsPoint(pos.coords.latitude, pos.coords.longitude),
-        (err) => console.error(err),
-        { enableHighAccuracy: true }
+        (pos) => handleNewGpsPoint(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy),
+        (err) => console.warn('Błąd GPS:', err),
+        { enableHighAccuracy: true, maximumAge: 500, timeout: 10000 }
       );
     }
   };
@@ -822,6 +927,7 @@
   };
 
   document.getElementById('btnNewRoute').onclick = startRecordingRoute;
+  document.getElementById('btnRefreshLocation').onclick = () => refreshCurrentLocation(true);
 
   window.addEventListener('DOMContentLoaded', async () => {
     initMap();
