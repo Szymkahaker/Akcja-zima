@@ -4,6 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Akcja Zima 2026/2027 – Asystent Pługopiaskarki</title>
+
+  <!-- Darmowa biblioteka mapowa Leaflet (bez klucza API) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+
   <style>
     :root {
       --bg: #0f172a;
@@ -103,7 +108,7 @@
       50% { opacity: 0.55; }
     }
 
-    /* Kontener mapy + ekran błędu */
+    /* Kontener mapy */
     .map-container {
       position: relative;
       flex: 1;
@@ -113,31 +118,21 @@
     #map {
       width: 100%;
       height: 100%;
+      z-index: 1;
     }
-    #mapErrorOverlay {
-      display: none;
-      position: absolute;
-      inset: 0;
-      background: rgba(15, 23, 42, 0.94);
-      padding: 24px;
-      flex-direction: column;
+
+    /* Własne znaczniki głosowe na mapie */
+    .voice-pin {
+      background: #f59e0b;
+      color: #0f172a;
+      border: 2px solid #0f172a;
+      border-radius: 999px;
+      font-weight: 900;
+      font-size: 11px;
+      display: flex;
       align-items: center;
       justify-content: center;
-      text-align: center;
-      z-index: 20;
-      gap: 10px;
-    }
-    #mapErrorOverlay h3 {
-      margin: 0;
-      color: var(--accent);
-      font-size: 1.15rem;
-    }
-    #mapErrorOverlay p {
-      margin: 0;
-      color: #cbd5e1;
-      font-size: 0.9rem;
-      max-width: 420px;
-      line-height: 1.45;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.6);
     }
 
     /* Alert dla kierowcy na żywo */
@@ -150,6 +145,7 @@
       font-size: 1.05rem;
       text-align: center;
       border-top: 2px solid #fff;
+      z-index: 10;
     }
 
     /* Panel sterowania na dole */
@@ -160,6 +156,7 @@
       display: flex;
       flex-direction: column;
       gap: 10px;
+      z-index: 10;
     }
     .row {
       display: flex;
@@ -305,10 +302,6 @@
 
 <div class="map-container">
   <div id="map"></div>
-  <div id="mapErrorOverlay">
-    <h3>⚠️ Mapa Google nie została załadowana</h3>
-    <p id="mapErrorText">Sprawdź połączenie z internetem oraz klucz Google Maps JavaScript API.</p>
-  </div>
 </div>
 
 <div id="voiceAlertBanner">🔊 Odtwarzam komunikat na km 0.00</div>
@@ -362,30 +355,6 @@
 </div>
 
 <script>
-  // ==========================================
-  // 0. DIAGNOSTYKA ŚRODOWISKA I BŁĘDÓW MAPY
-  // ==========================================
-  function showMapError(message) {
-    const overlay = document.getElementById('mapErrorOverlay');
-    const text = document.getElementById('mapErrorText');
-    text.textContent = message;
-    overlay.style.display = 'flex';
-  }
-
-  window.gm_authFailure = function () {
-    showMapError(
-      'Błąd autoryzacji Google Maps API (nieprawidłowy klucz, brak włączonego Billing lub ograniczenie domeny HTTP referrer).'
-    );
-  };
-
-  window.addEventListener('DOMContentLoaded', () => {
-    if (window.location.protocol === 'content:' || window.location.protocol === 'file:') {
-      showMapError(
-        'Plik otwarto lokalnie (' + window.location.protocol + '). Uruchom aplikację przez serwer HTTP/HTTPS (np. localhost lub hosting z SSL), aby działały Mapy Google, GPS i mikrofon.'
-      );
-    }
-  });
-
   // ==========================================
   // 1. BAZA DANYCH INDEXEDDB (TRASY + AUDIO)
   // ==========================================
@@ -441,7 +410,7 @@
   }
 
   // ==========================================
-  // 2. ZMIENNE GLOBALNE I MAPA GOOGLE
+  // 2. ZMIENNE GLOBALNE I MAPA LEAFLET (OSM)
   // ==========================================
   let map = null, polyline = null, vehicleMarker = null;
   let routeMarkers = [];
@@ -464,51 +433,37 @@
   let simDriveIndex = 0;
 
   function initMap() {
-    const startPos = { lat: simLat, lng: simLng };
-    map = new google.maps.Map(document.getElementById('map'), {
-      center: startPos,
-      zoom: 15,
-      disableDefaultUI: true,
+    map = L.map('map', {
       zoomControl: true,
-      styles: [
-        { elementType: 'geometry', stylers: [{ color: '#1d2c4d' }] },
-        { elementType: 'labels.text.fill', stylers: [{ color: '#8ec3b9' }] },
-        { elementType: 'labels.text.stroke', stylers: [{ color: '#1a3646' }] },
-        { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#304a7d' }] },
-        { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#2c6675' }] }
-      ]
-    });
+      attributionControl: false
+    }).setView([simLat, simLng], 15);
 
-    polyline = new google.maps.Polyline({
-      path: [],
-      geodesic: true,
-      strokeColor: '#38bdf8',
-      strokeOpacity: 0.95,
-      strokeWeight: 7,
-      map: map
-    });
+    // Ciemny podkład drogowy (CartoDB Dark Matter) – zero kluczy API
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      maxZoom: 19,
+      subdomains: 'abcd'
+    }).addTo(map);
 
-    vehicleMarker = new google.maps.Marker({
-      position: startPos,
-      map: map,
-      title: 'Pługopiaskarka',
-      icon: {
-        path: google.maps.SymbolPath.CIRCLE,
-        scale: 10,
-        fillColor: '#22c55e',
-        fillOpacity: 1,
-        strokeColor: '#ffffff',
-        strokeWeight: 3
-      }
-    });
+    polyline = L.polyline([], {
+      color: '#38bdf8',
+      weight: 7,
+      opacity: 0.95
+    }).addTo(map);
+
+    vehicleMarker = L.circleMarker([simLat, simLng], {
+      radius: 10,
+      fillColor: '#22c55e',
+      color: '#ffffff',
+      weight: 3,
+      fillOpacity: 1
+    }).addTo(map);
 
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition((pos) => {
         simLat = pos.coords.latitude;
         simLng = pos.coords.longitude;
-        const p = { lat: simLat, lng: simLng };
-        map.setCenter(p);
-        vehicleMarker.setPosition(p);
+        map.setView([simLat, simLng], 15);
+        vehicleMarker.setLatLng([simLat, simLng]);
       }, () => {});
     }
   }
@@ -558,8 +513,8 @@
   }
 
   function clearMapOverlays() {
-    if (polyline) polyline.setPath([]);
-    routeMarkers.forEach(m => m.setMap(null));
+    if (polyline) polyline.setLatLngs([]);
+    routeMarkers.forEach(m => map.removeLayer(m));
     routeMarkers = [];
     document.getElementById('notesBar').innerHTML = '';
   }
@@ -589,14 +544,13 @@
   }
 
   function handleNewGpsPoint(lat, lng) {
-    const posObj = { lat, lng };
-    if (vehicleMarker) vehicleMarker.setPosition(posObj);
-    if (map) map.panTo(posObj);
+    if (vehicleMarker) vehicleMarker.setLatLng([lat, lng]);
+    if (map) map.panTo([lat, lng]);
 
     if (mode === 'RECORDING') {
       if (recordedPoints.length === 0) {
         recordedPoints.push({ lat, lng, km: 0 });
-        if (polyline) polyline.getPath().push(new google.maps.LatLng(lat, lng));
+        if (polyline) polyline.addLatLng([lat, lng]);
         return;
       }
 
@@ -607,7 +561,7 @@
       if (distMeters >= 5 && distMeters <= 150) {
         totalKm += distKm;
         recordedPoints.push({ lat, lng, km: totalKm });
-        if (polyline) polyline.getPath().push(new google.maps.LatLng(lat, lng));
+        if (polyline) polyline.addLatLng([lat, lng]);
         updateKmUI();
       }
     } else if (mode === 'DRIVING') {
@@ -641,12 +595,11 @@
 
       mediaRecorder.onstop = () => {
         const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
-        const lat = vehicleMarker ? vehicleMarker.getPosition().lat() : simLat;
-        const lng = vehicleMarker ? vehicleMarker.getPosition().lng() : simLng;
+        const pos = vehicleMarker ? vehicleMarker.getLatLng() : { lat: simLat, lng: simLng };
         const note = {
           km: Number(totalKm.toFixed(2)),
-          lat,
-          lng,
+          lat: pos.lat,
+          lng: pos.lng,
           audioBlob
         };
         voiceNotes.push(note);
@@ -679,20 +632,14 @@
 
   function addVoiceMarkerToMap(note) {
     if (!map) return;
-    const marker = new google.maps.Marker({
-      position: { lat: note.lat, lng: note.lng },
-      map: map,
-      label: { text: `${note.km}`, color: '#0f172a', fontWeight: 'bold', fontSize: '11px' },
-      icon: {
-        path: google.maps.SymbolPath.CIRCLE,
-        scale: 14,
-        fillColor: '#f59e0b',
-        fillOpacity: 1,
-        strokeColor: '#0f172a',
-        strokeWeight: 2
-      }
+    const icon = L.divIcon({
+      className: 'voice-pin',
+      html: `${note.km}`,
+      iconSize: [34, 34],
+      iconAnchor: [17, 17]
     });
-    marker.addListener('click', () => playAudioNote(note));
+    const marker = L.marker([note.lat, note.lng], { icon }).addTo(map);
+    marker.on('click', () => playAudioNote(note));
     routeMarkers.push(marker);
   }
 
@@ -810,11 +757,11 @@
     updateKmUI();
 
     if (map && polyline) {
-      const path = recordedPoints.map(p => new google.maps.LatLng(p.lat, p.lng));
-      polyline.setPath(path);
-      if (path.length > 0) {
-        map.setCenter(path[0]);
-        vehicleMarker.setPosition(path[0]);
+      const latLngs = recordedPoints.map(p => [p.lat, p.lng]);
+      polyline.setLatLngs(latLngs);
+      if (latLngs.length > 0) {
+        map.fitBounds(polyline.getBounds(), { padding: [30, 30] });
+        vehicleMarker.setLatLng(latLngs[0]);
       }
     }
 
@@ -877,15 +824,10 @@
   document.getElementById('btnNewRoute').onclick = startRecordingRoute;
 
   window.addEventListener('DOMContentLoaded', async () => {
+    initMap();
     await initDB();
     await refreshSavedRoutesDropdown();
   });
-</script>
-
-<!-- WSTAW SWÓJ KLUCZ API GOOGLE MAPS PONIŻEJ -->
-<script async defer
-  src="https://maps.googleapis.com/maps/api/js?key=TWOJ_KLUCZ_GOOGLE_MAPS_API&callback=initMap"
-  onerror="showMapError('Nie udało się pobrać skryptu Google Maps. Sprawdź połączenie z internetem.')">
 </script>
 
 </body>
