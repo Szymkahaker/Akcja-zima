@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="pl">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Akcja Zima 2026/2027 � Asystent P�ugopiaskarki</title>
+  <title>Akcja Zima 2026/2027 – Asystent Pługopiaskarki</title>
   <style>
     :root {
       --bg: #0f172a;
@@ -26,7 +26,7 @@
       overflow: hidden;
     }
 
-    /* G�rny pasek z logo i statusem */
+    /* Górny pasek z logo i statusem */
     header {
       background: linear-gradient(180deg, #1e293b 0%, #162032 100%);
       padding: 8px 12px;
@@ -103,7 +103,7 @@
       50% { opacity: 0.55; }
     }
 
-    /* Kontener mapy + ekran b��du */
+    /* Kontener mapy + ekran błędu */
     .map-container {
       position: relative;
       flex: 1;
@@ -140,7 +140,7 @@
       line-height: 1.45;
     }
 
-    /* Alert dla kierowcy na �ywo */
+    /* Alert dla kierowcy na żywo */
     #voiceAlertBanner {
       display: none;
       background: var(--accent);
@@ -222,7 +222,7 @@
       min-width: 0;
     }
 
-    /* Lista punkt�w g�osowych */
+    /* Lista punktów głosowych */
     .notes-bar {
       display: flex;
       gap: 6px;
@@ -236,4 +236,657 @@
       padding: 8px 12px;
       border-radius: 999px;
       font-size: 0.85rem;
-      white-space
+      white-space: nowrap;
+      cursor: pointer;
+      flex: 0 0 auto;
+      min-height: auto;
+    }
+
+    /* Modal zapisu */
+    #saveModal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.82);
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      z-index: 999;
+    }
+    .modal-card {
+      background: var(--panel);
+      padding: 20px;
+      border-radius: 16px;
+      width: 100%;
+      max-width: 420px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      border: 1px solid #475569;
+    }
+    .modal-card h3 { margin: 0; }
+  </style>
+</head>
+<body>
+
+<header>
+  <!-- LOGO AKCJA ZIMA 2026/2027 -->
+  <div class="brand-logo">
+    <svg width="40" height="40" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Logo Akcja Zima 2026/2027">
+      <rect x="2" y="2" width="60" height="60" rx="14" fill="#0f172a" stroke="#f59e0b" stroke-width="3"/>
+      <!-- Droga w perspektywie -->
+      <path d="M22 56L29 34H35L42 56H22Z" fill="#334155"/>
+      <path d="M32 37V42M32 46V53" stroke="#f8fafc" stroke-width="2.5" stroke-linecap="round"/>
+      <!-- Lemiesz pługa -->
+      <path d="M14 35C14 31.5 17 29 21 29H43C47 29 50 31.5 50 35L47 40H17L14 35Z" fill="#f59e0b"/>
+      <path d="M19 32L23 37M27 32L31 37M35 32L39 37M43 32L46 36" stroke="#0f172a" stroke-width="2.2" stroke-linecap="round"/>
+      <!-- Płatek śniegu nad pługiem -->
+      <g stroke="#38bdf8" stroke-width="2.4" stroke-linecap="round">
+        <path d="M32 10V24"/>
+        <path d="M25.9 13.5L38.1 20.5"/>
+        <path d="M38.1 13.5L25.9 20.5"/>
+        <circle cx="32" cy="17" r="2" fill="#0f172a"/>
+      </g>
+    </svg>
+    <div class="brand-title">
+      <span class="brand-main">AKCJA ZIMA</span>
+      <span class="brand-season">2026 / 2027</span>
+    </div>
+  </div>
+
+  <div class="header-right">
+    <div class="km-wrapper">
+      <div class="km-label">DYSTANS TRASY</div>
+      <div class="km-box"><span id="kmDisplay">0.00</span> km</div>
+    </div>
+    <div id="statusBadge" class="status-pill">Gotowy</div>
+  </div>
+</header>
+
+<div class="map-container">
+  <div id="map"></div>
+  <div id="mapErrorOverlay">
+    <h3>⚠️ Mapa Google nie została załadowana</h3>
+    <p id="mapErrorText">Sprawdź połączenie z internetem oraz klucz Google Maps JavaScript API.</p>
+  </div>
+</div>
+
+<div id="voiceAlertBanner">🔊 Odtwarzam komunikat na km 0.00</div>
+
+<div class="controls">
+  <div id="notesBar" class="notes-bar"></div>
+
+  <!-- Wybór zapisanej trasy do jazdy -->
+  <div class="row" id="idleControls">
+    <select id="savedRoutesSelect">
+      <option value="">-- Wybierz zapisaną trasę --</option>
+    </select>
+    <button id="btnDeleteRoute" class="btn-del" title="Usuń wybraną trasę">🗑️</button>
+    <button id="btnLoadRoute" style="flex: 0.75; background: var(--info); color: #082f49;">Jedź trasą</button>
+    <button id="btnNewRoute" class="btn-start" style="flex: 0.95;">+ Nagraj nową</button>
+  </div>
+
+  <!-- Sterowanie podczas nagrywania nowej trasy -->
+  <div id="recordControls" style="display: none; flex-direction: column; gap: 10px;">
+    <button id="btnRecordVoice" class="btn-voice">
+      🎙️ PRZYTRZYMAJ ABY NAGRAĆ GŁOS (km <span id="btnKm">0.00</span>)
+    </button>
+    <div class="row">
+      <button id="btnSimStep" class="btn-sim">🧪 Symuluj +150m GPS</button>
+      <button id="btnFinishRecord" class="btn-stop">⏹ Zakończ i zapisz trasę</button>
+    </div>
+  </div>
+
+  <!-- Sterowanie podczas odtwarzania trasy przez kierowcę -->
+  <div id="driveControls" style="display: none; flex-direction: column; gap: 10px;">
+    <div class="row">
+      <button id="btnSimDrive" class="btn-sim">🧪 Symuluj przejazd</button>
+      <button id="btnExitDrive" class="btn-stop">Zakończ trasę</button>
+    </div>
+  </div>
+</div>
+
+<!-- Okno zapisu trasy -->
+<div id="saveModal">
+  <div class="modal-card">
+    <h3>Zapisz przejechaną trasę</h3>
+    <p style="margin:0; color: var(--muted); font-size: 0.9rem;">
+      Długość: <strong id="modalKm">0.00</strong> km | Komentarzy głosowych: <strong id="modalNotes">0</strong>
+    </p>
+    <input type="text" id="routeNameInput" placeholder="Np. DW 793 Myszków – Żarki" />
+    <div class="row">
+      <button id="btnCancelSave">Odrzuć</button>
+      <button id="btnConfirmSave" class="btn-start">Zapisz trasę</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ==========================================
+  // 0. DIAGNOSTYKA ŚRODOWISKA I BŁĘDÓW MAPY
+  // ==========================================
+  function showMapError(message) {
+    const overlay = document.getElementById('mapErrorOverlay');
+    const text = document.getElementById('mapErrorText');
+    text.textContent = message;
+    overlay.style.display = 'flex';
+  }
+
+  window.gm_authFailure = function () {
+    showMapError(
+      'Błąd autoryzacji Google Maps API (nieprawidłowy klucz, brak włączonego Billing lub ograniczenie domeny HTTP referrer).'
+    );
+  };
+
+  window.addEventListener('DOMContentLoaded', () => {
+    if (window.location.protocol === 'content:' || window.location.protocol === 'file:') {
+      showMapError(
+        'Plik otwarto lokalnie (' + window.location.protocol + '). Uruchom aplikację przez serwer HTTP/HTTPS (np. localhost lub hosting z SSL), aby działały Mapy Google, GPS i mikrofon.'
+      );
+    }
+  });
+
+  // ==========================================
+  // 1. BAZA DANYCH INDEXEDDB (TRASY + AUDIO)
+  // ==========================================
+  const DB_NAME = 'SnowplowRoutesDB_2026_2027';
+  const DB_VERSION = 1;
+  let db;
+
+  function initDB() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onupgradeneeded = (e) => {
+        const database = e.target.result;
+        if (!database.objectStoreNames.contains('routes')) {
+          database.createObjectStore('routes', { keyPath: 'id', autoIncrement: true });
+        }
+      };
+      req.onsuccess = (e) => {
+        db = e.target.result;
+        resolve(db);
+      };
+      req.onerror = (e) => reject(e);
+    });
+  }
+
+  function saveRouteToDB(routeObj) {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(['routes'], 'readwrite');
+      const store = tx.objectStore('routes');
+      const req = store.add(routeObj);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = (e) => reject(e);
+    });
+  }
+
+  function deleteRouteFromDB(id) {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(['routes'], 'readwrite');
+      const store = tx.objectStore('routes');
+      const req = store.delete(id);
+      req.onsuccess = () => resolve();
+      req.onerror = (e) => reject(e);
+    });
+  }
+
+  function getAllRoutesFromDB() {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(['routes'], 'readonly');
+      const store = tx.objectStore('routes');
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = (e) => reject(e);
+    });
+  }
+
+  // ==========================================
+  // 2. ZMIENNE GLOBALNE I MAPA GOOGLE
+  // ==========================================
+  let map = null, polyline = null, vehicleMarker = null;
+  let routeMarkers = [];
+  let watchId = null;
+  let wakeLock = null;
+  let audioUnlocked = false;
+
+  let mode = 'IDLE'; // 'IDLE' | 'RECORDING' | 'DRIVING'
+  let recordedPoints = [];
+  let voiceNotes = [];
+  let totalKm = 0;
+
+  let mediaRecorder = null;
+  let audioChunks = [];
+  let isRecordingVoice = false;
+
+  // Punkt startowy (okolice Myszkowa)
+  let simLat = 50.5735;
+  let simLng = 19.3220;
+  let simDriveIndex = 0;
+
+  function initMap() {
+    const startPos = { lat: simLat, lng: simLng };
+    map = new google.maps.Map(document.getElementById('map'), {
+      center: startPos,
+      zoom: 15,
+      disableDefaultUI: true,
+      zoomControl: true,
+      styles: [
+        { elementType: 'geometry', stylers: [{ color: '#1d2c4d' }] },
+        { elementType: 'labels.text.fill', stylers: [{ color: '#8ec3b9' }] },
+        { elementType: 'labels.text.stroke', stylers: [{ color: '#1a3646' }] },
+        { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#304a7d' }] },
+        { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#2c6675' }] }
+      ]
+    });
+
+    polyline = new google.maps.Polyline({
+      path: [],
+      geodesic: true,
+      strokeColor: '#38bdf8',
+      strokeOpacity: 0.95,
+      strokeWeight: 7,
+      map: map
+    });
+
+    vehicleMarker = new google.maps.Marker({
+      position: startPos,
+      map: map,
+      title: 'Pługopiaskarka',
+      icon: {
+        path: google.maps.SymbolPath.CIRCLE,
+        scale: 10,
+        fillColor: '#22c55e',
+        fillOpacity: 1,
+        strokeColor: '#ffffff',
+        strokeWeight: 3
+      }
+    });
+
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition((pos) => {
+        simLat = pos.coords.latitude;
+        simLng = pos.coords.longitude;
+        const p = { lat: simLat, lng: simLng };
+        map.setCenter(p);
+        vehicleMarker.setPosition(p);
+      }, () => {});
+    }
+  }
+
+  // ==========================================
+  // 3. MATEMATYKA GPS (HAVERSINE)
+  // ==========================================
+  function calcDistanceKm(lat1, lon1, lat2, lon2) {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+  }
+
+  function updateKmUI() {
+    const formatted = totalKm.toFixed(2);
+    document.getElementById('kmDisplay').textContent = formatted;
+    const btnKmEl = document.getElementById('btnKm');
+    if (btnKmEl) btnKmEl.textContent = formatted;
+  }
+
+  // ==========================================
+  // 4. TRYB NAGRYWANIA TRASY NA ŻYWO
+  // ==========================================
+  async function requestWakeLock() {
+    try {
+      if ('wakeLock' in navigator) {
+        wakeLock = await navigator.wakeLock.request('screen');
+      }
+    } catch (e) { console.warn('WakeLock niedostępny:', e); }
+  }
+
+  function unlockAudioContext() {
+    if (audioUnlocked) return;
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (Ctx) {
+        const ctx = new Ctx();
+        if (ctx.state === 'suspended') ctx.resume();
+        audioUnlocked = true;
+      }
+    } catch (e) {}
+  }
+
+  function clearMapOverlays() {
+    if (polyline) polyline.setPath([]);
+    routeMarkers.forEach(m => m.setMap(null));
+    routeMarkers = [];
+    document.getElementById('notesBar').innerHTML = '';
+  }
+
+  function startRecordingRoute() {
+    mode = 'RECORDING';
+    recordedPoints = [];
+    voiceNotes = [];
+    totalKm = 0;
+    updateKmUI();
+    clearMapOverlays();
+    requestWakeLock();
+
+    document.getElementById('idleControls').style.display = 'none';
+    document.getElementById('recordControls').style.display = 'flex';
+    const badge = document.getElementById('statusBadge');
+    badge.textContent = '● NAGRYWANIE';
+    badge.className = 'status-pill rec';
+
+    if (navigator.geolocation) {
+      watchId = navigator.geolocation.watchPosition(
+        (pos) => handleNewGpsPoint(pos.coords.latitude, pos.coords.longitude),
+        (err) => console.error('Błąd GPS:', err),
+        { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
+      );
+    }
+  }
+
+  function handleNewGpsPoint(lat, lng) {
+    const posObj = { lat, lng };
+    if (vehicleMarker) vehicleMarker.setPosition(posObj);
+    if (map) map.panTo(posObj);
+
+    if (mode === 'RECORDING') {
+      if (recordedPoints.length === 0) {
+        recordedPoints.push({ lat, lng, km: 0 });
+        if (polyline) polyline.getPath().push(new google.maps.LatLng(lat, lng));
+        return;
+      }
+
+      const last = recordedPoints[recordedPoints.length - 1];
+      const distKm = calcDistanceKm(last.lat, last.lng, lat, lng);
+      const distMeters = distKm * 1000;
+
+      if (distMeters >= 5 && distMeters <= 150) {
+        totalKm += distKm;
+        recordedPoints.push({ lat, lng, km: totalKm });
+        if (polyline) polyline.getPath().push(new google.maps.LatLng(lat, lng));
+        updateKmUI();
+      }
+    } else if (mode === 'DRIVING') {
+      checkProximityToVoiceNotes(lat, lng);
+    }
+  }
+
+  // ==========================================
+  // 5. NAGRYWANIE KOMENTARZY GŁOSOWYCH (PTT)
+  // ==========================================
+  const btnRecordVoice = document.getElementById('btnRecordVoice');
+
+  async function startVoiceCapture(e) {
+    e.preventDefault();
+    if (isRecordingVoice || mode !== 'RECORDING') return;
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      alert('Twoja przeglądarka blokuje mikrofon (wymagane połączenie HTTPS lub localhost).');
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '';
+      mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      audioChunks = [];
+
+      mediaRecorder.ondataavailable = (ev) => {
+        if (ev.data.size > 0) audioChunks.push(ev.data);
+      };
+
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+        const lat = vehicleMarker ? vehicleMarker.getPosition().lat() : simLat;
+        const lng = vehicleMarker ? vehicleMarker.getPosition().lng() : simLng;
+        const note = {
+          km: Number(totalKm.toFixed(2)),
+          lat,
+          lng,
+          audioBlob
+        };
+        voiceNotes.push(note);
+        addVoiceMarkerToMap(note);
+        renderNotesBar();
+        stream.getTracks().forEach(t => t.stop());
+      };
+
+      mediaRecorder.start();
+      isRecordingVoice = true;
+      btnRecordVoice.classList.add('recording');
+      btnRecordVoice.textContent = '🔴 MÓW TERAZ... (puść aby zapisać)';
+    } catch (err) {
+      alert('Brak dostępu do mikrofonu: ' + err.message);
+    }
+  }
+
+  function stopVoiceCapture(e) {
+    if (e) e.preventDefault();
+    if (!isRecordingVoice || !mediaRecorder) return;
+    mediaRecorder.stop();
+    isRecordingVoice = false;
+    btnRecordVoice.classList.remove('recording');
+    btnRecordVoice.innerHTML = `🎙️ PRZYTRZYMAJ ABY NAGRAĆ GŁOS (km <span id="btnKm">${totalKm.toFixed(2)}</span>)`;
+  }
+
+  btnRecordVoice.addEventListener('pointerdown', startVoiceCapture);
+  btnRecordVoice.addEventListener('pointerup', stopVoiceCapture);
+  btnRecordVoice.addEventListener('pointercancel', stopVoiceCapture);
+
+  function addVoiceMarkerToMap(note) {
+    if (!map) return;
+    const marker = new google.maps.Marker({
+      position: { lat: note.lat, lng: note.lng },
+      map: map,
+      label: { text: `${note.km}`, color: '#0f172a', fontWeight: 'bold', fontSize: '11px' },
+      icon: {
+        path: google.maps.SymbolPath.CIRCLE,
+        scale: 14,
+        fillColor: '#f59e0b',
+        fillOpacity: 1,
+        strokeColor: '#0f172a',
+        strokeWeight: 2
+      }
+    });
+    marker.addListener('click', () => playAudioNote(note));
+    routeMarkers.push(marker);
+  }
+
+  function renderNotesBar() {
+    const bar = document.getElementById('notesBar');
+    bar.innerHTML = '';
+    voiceNotes.forEach((n) => {
+      const chip = document.createElement('button');
+      chip.className = 'note-chip';
+      chip.textContent = `🔊 km ${n.km.toFixed(2)}`;
+      chip.onclick = () => playAudioNote(n);
+      bar.appendChild(chip);
+    });
+  }
+
+  function playAudioNote(note) {
+    const url = URL.createObjectURL(note.audioBlob);
+    const audio = new Audio(url);
+    const banner = document.getElementById('voiceAlertBanner');
+    banner.style.display = 'block';
+    banner.textContent = `🔊 Komunikat dla km ${note.km.toFixed(2)}`;
+    audio.onended = () => {
+      banner.style.display = 'none';
+      URL.revokeObjectURL(url);
+    };
+    audio.play().catch(e => {
+      console.warn('Autoodtwarzanie zablokowane:', e);
+      banner.textContent = `⚠️ Kliknij chip km ${note.km.toFixed(2)}, aby odsłuchać`;
+    });
+  }
+
+  // ==========================================
+  // 6. ZAPIS TRASY
+  // ==========================================
+  document.getElementById('btnFinishRecord').onclick = () => {
+    document.getElementById('modalKm').textContent = totalKm.toFixed(2);
+    document.getElementById('modalNotes').textContent = voiceNotes.length;
+    document.getElementById('saveModal').style.display = 'flex';
+  };
+
+  document.getElementById('btnCancelSave').onclick = () => {
+    document.getElementById('saveModal').style.display = 'none';
+    resetToIdle();
+  };
+
+  document.getElementById('btnConfirmSave').onclick = async () => {
+    const name = document.getElementById('routeNameInput').value.trim() || `Trasa ${new Date().toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })}`;
+    await saveRouteToDB({
+      name: name,
+      createdAt: new Date().toISOString(),
+      totalKm: Number(totalKm.toFixed(2)),
+      points: recordedPoints,
+      notes: voiceNotes
+    });
+    document.getElementById('routeNameInput').value = '';
+    document.getElementById('saveModal').style.display = 'none';
+    await refreshSavedRoutesDropdown();
+    resetToIdle();
+  };
+
+  function resetToIdle() {
+    mode = 'IDLE';
+    if (watchId !== null) {
+      navigator.geolocation.clearWatch(watchId);
+      watchId = null;
+    }
+    document.getElementById('idleControls').style.display = 'flex';
+    document.getElementById('recordControls').style.display = 'none';
+    document.getElementById('driveControls').style.display = 'none';
+    const badge = document.getElementById('statusBadge');
+    badge.textContent = 'Gotowy';
+    badge.className = 'status-pill';
+  }
+
+  // ==========================================
+  // 7. TRYB KIEROWCY (ODTWARZANIE TRASY)
+  // ==========================================
+  async function refreshSavedRoutesDropdown() {
+    const routes = await getAllRoutesFromDB();
+    const sel = document.getElementById('savedRoutesSelect');
+    sel.innerHTML = '<option value="">-- Wybierz zapisaną trasę --</option>';
+    routes.forEach(r => {
+      const opt = document.createElement('option');
+      opt.value = r.id;
+      opt.textContent = `${r.name} (${r.totalKm} km, ${r.notes.length} głos.)`;
+      sel.appendChild(opt);
+    });
+  }
+
+  document.getElementById('btnDeleteRoute').onclick = async () => {
+    const id = Number(document.getElementById('savedRoutesSelect').value);
+    if (!id) return alert('Wybierz trasę z listy, aby ją usunąć.');
+    if (confirm('Usunąć wybraną trasę z pamięci urządzenia?')) {
+      await deleteRouteFromDB(id);
+      await refreshSavedRoutesDropdown();
+    }
+  };
+
+  document.getElementById('btnLoadRoute').onclick = async () => {
+    const id = Number(document.getElementById('savedRoutesSelect').value);
+    if (!id) return alert('Wybierz trasę z listy.');
+
+    unlockAudioContext();
+    const routes = await getAllRoutesFromDB();
+    const selected = routes.find(r => r.id === id);
+    if (!selected) return;
+
+    mode = 'DRIVING';
+    clearMapOverlays();
+    requestWakeLock();
+
+    recordedPoints = selected.points;
+    voiceNotes = selected.notes.map(n => ({ ...n, played: false }));
+    totalKm = selected.totalKm;
+    updateKmUI();
+
+    if (map && polyline) {
+      const path = recordedPoints.map(p => new google.maps.LatLng(p.lat, p.lng));
+      polyline.setPath(path);
+      if (path.length > 0) {
+        map.setCenter(path[0]);
+        vehicleMarker.setPosition(path[0]);
+      }
+    }
+
+    voiceNotes.forEach((n) => addVoiceMarkerToMap(n));
+    renderNotesBar();
+
+    document.getElementById('idleControls').style.display = 'none';
+    document.getElementById('driveControls').style.display = 'flex';
+    const badge = document.getElementById('statusBadge');
+    badge.textContent = selected.name;
+    badge.className = 'status-pill drive';
+    simDriveIndex = 0;
+
+    if (navigator.geolocation) {
+      watchId = navigator.geolocation.watchPosition(
+        (pos) => handleNewGpsPoint(pos.coords.latitude, pos.coords.longitude),
+        (err) => console.error(err),
+        { enableHighAccuracy: true }
+      );
+    }
+  };
+
+  function checkProximityToVoiceNotes(lat, lng) {
+    voiceNotes.forEach(note => {
+      if (note.played) return;
+      const distMeters = calcDistanceKm(lat, lng, note.lat, note.lng) * 1000;
+      if (distMeters <= 120) {
+        note.played = true;
+        playAudioNote(note);
+      }
+    });
+  }
+
+  document.getElementById('btnExitDrive').onclick = () => {
+    clearMapOverlays();
+    totalKm = 0;
+    updateKmUI();
+    resetToIdle();
+  };
+
+  // ==========================================
+  // 8. SYMULATOR DO TESTÓW PRZY BIURKU
+  // ==========================================
+  document.getElementById('btnSimStep').onclick = () => {
+    simLat += 0.0011;
+    simLng += 0.0005;
+    handleNewGpsPoint(simLat, simLng);
+  };
+
+  document.getElementById('btnSimDrive').onclick = () => {
+    if (recordedPoints.length === 0) return;
+    if (simDriveIndex >= recordedPoints.length) simDriveIndex = 0;
+    const pt = recordedPoints[simDriveIndex];
+    totalKm = pt.km;
+    updateKmUI();
+    handleNewGpsPoint(pt.lat, pt.lng);
+    simDriveIndex++;
+  };
+
+  document.getElementById('btnNewRoute').onclick = startRecordingRoute;
+
+  window.addEventListener('DOMContentLoaded', async () => {
+    await initDB();
+    await refreshSavedRoutesDropdown();
+  });
+</script>
+
+<!-- WSTAW SWÓJ KLUCZ API GOOGLE MAPS PONIŻEJ -->
+<script async defer
+  src="https://maps.googleapis.com/maps/api/js?key=TWOJ_KLUCZ_GOOGLE_MAPS_API&callback=initMap"
+  onerror="showMapError('Nie udało się pobrać skryptu Google Maps. Sprawdź połączenie z internetem.')">
+</script>
+
+</body>
+</html>
