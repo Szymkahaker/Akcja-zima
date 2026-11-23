@@ -84,7 +84,7 @@
       letter-spacing: 0.5px;
     }
     .km-box {
-      font-size: 1.35rem;
+      font-size: 1.25rem;
       font-weight: 800;
       color: var(--accent);
       letter-spacing: 0.5px;
@@ -99,7 +99,7 @@
       color: var(--text);
       font-weight: 700;
       white-space: nowrap;
-      max-width: 150px;
+      max-width: 140px;
       overflow: hidden;
       text-overflow: ellipsis;
     }
@@ -125,6 +125,90 @@
     .btn-admin-gear:hover {
       border-color: var(--accent);
       color: var(--accent);
+    }
+
+    /* Belka nawigacyjna w górnej części ekranu (aktywna w trybie jazdy) */
+    #navManeuverBar {
+      display: none;
+      background: #0b1324;
+      border-bottom: 2px solid var(--info);
+      padding: 8px 12px;
+      align-items: center;
+      gap: 12px;
+      z-index: 20;
+    }
+    #navManeuverBar.active {
+      display: flex;
+    }
+    #navManeuverBar.turn-soon {
+      background: #1c1917;
+      border-bottom-color: var(--accent);
+    }
+    #navManeuverBar.off-route {
+      background: #450a0a;
+      border-bottom-color: var(--danger);
+    }
+
+    .nav-arrow-box {
+      width: 56px;
+      height: 56px;
+      border-radius: 14px;
+      background: #1e293b;
+      border: 2px solid var(--info);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+      font-weight: 900;
+      color: var(--info);
+      flex: none;
+    }
+    #navManeuverBar.turn-soon .nav-arrow-box {
+      background: var(--accent);
+      border-color: #fff;
+      color: #0f172a;
+    }
+    #navManeuverBar.off-route .nav-arrow-box {
+      background: var(--danger);
+      border-color: #fecaca;
+      color: #fff;
+    }
+
+    .nav-info {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      flex: 1;
+    }
+    .nav-dist-row {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+    .nav-dist {
+      font-size: 1.55rem;
+      font-weight: 900;
+      color: #ffffff;
+      line-height: 1.05;
+    }
+    #navManeuverBar.turn-soon .nav-dist {
+      color: var(--accent);
+    }
+    .nav-action-label {
+      font-size: 1.05rem;
+      font-weight: 800;
+      color: #e2e8f0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .nav-sub {
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     @keyframes pulse {
@@ -189,9 +273,9 @@
       display: none;
       background: var(--accent);
       color: #0f172a;
-      padding: 12px 16px;
+      padding: 10px 16px;
       font-weight: 800;
-      font-size: 1.05rem;
+      font-size: 1rem;
       text-align: center;
       border-top: 2px solid #fff;
       z-index: 10;
@@ -395,6 +479,18 @@
   </div>
 </header>
 
+<!-- Górny asystent kierunku jazdy: strzałka, dystans w metrach i manewr -->
+<div id="navManeuverBar" aria-live="polite">
+  <div id="navArrowIcon" class="nav-arrow-box">↑</div>
+  <div class="nav-info">
+    <div class="nav-dist-row">
+      <span id="navDistanceText" class="nav-dist">-- m</span>
+      <span id="navManeuverTitle" class="nav-action-label">Jedź prosto</span>
+    </div>
+    <div id="navSubInfo" class="nav-sub">Oczekiwanie na pozycję GPS...</div>
+  </div>
+</div>
+
 <div class="map-container">
   <div id="map"></div>
   <button id="btnRefreshLocation" type="button" class="btn-locate" title="Odśwież aktualną pozycję GPS">
@@ -580,14 +676,21 @@
 
   let mode = 'IDLE'; // 'IDLE' | 'RECORDING' | 'DRIVING'
   let recordedPoints = [];
+  let routeManeuvers = [];
   let voiceNotes = [];
   let totalKm = 0;
+  let routeTotalKm = 0;
+
+  let lastSpokenKey = '';
+  let lastOffRouteWarningAt = 0;
+  let startedRouteAnnounced = false;
+  let finishedRouteAnnounced = false;
 
   let mediaRecorder = null;
   let audioChunks = [];
   let isRecordingVoice = false;
 
-  // Punkt startowy (okolice Myszkowa)
+  // Punkt startowy (okolice Myszkowa / Żarek)
   let simLat = 50.5735;
   let simLng = 19.3220;
   let simDriveIndex = 0;
@@ -693,7 +796,7 @@
   }
 
   // ==========================================
-  // 3. MATEMATYKA GPS (HAVERSINE)
+  // 3. MATEMATYKA GPS (HAVERSINE, KĄTY, KIERUNKI)
   // ==========================================
   function calcDistanceKm(lat1, lon1, lat2, lon2) {
     const R = 6371;
@@ -706,15 +809,323 @@
     return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
   }
 
-  function updateKmUI() {
-    const formatted = totalKm.toFixed(2);
-    document.getElementById('kmDisplay').textContent = formatted;
+  function calcBearingDeg(lat1, lon1, lat2, lon2) {
+    const p1 = lat1 * Math.PI / 180;
+    const p2 = lat2 * Math.PI / 180;
+    const dl = (lon2 - lon1) * Math.PI / 180;
+    const y = Math.sin(dl) * Math.cos(p2);
+    const x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl);
+    return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
+  }
+
+  function signedAngleDiff(fromDeg, toDeg) {
+    let diff = ((toDeg - fromDeg + 540) % 360) - 180;
+    return diff;
+  }
+
+  function bearingToCompassPl(deg) {
+    const dirs = [
+      'północ', 'północny wschód', 'wschód', 'południowy wschód',
+      'południe', 'południowy zachód', 'zachód', 'północny zachód'
+    ];
+    return dirs[Math.round(deg / 45) % 8];
+  }
+
+  function formatMeters(meters) {
+    if (meters >= 1000) {
+      return `${(meters / 1000).toFixed(1)} km`;
+    }
+    return `${Math.max(0, Math.round(meters / 10) * 10)} m`;
+  }
+
+  function formatMetersExact(meters) {
+    if (meters >= 1000) {
+      return `${(meters / 1000).toFixed(2)} km`;
+    }
+    return `${Math.max(0, Math.round(meters))} m`;
+  }
+
+  function updateKmUI(currentKm = null, maxKm = null) {
+    const kmEl = document.getElementById('kmDisplay');
+    if (mode === 'DRIVING' && currentKm !== null && maxKm !== null) {
+      kmEl.textContent = `${currentKm.toFixed(2)}/${maxKm.toFixed(2)}`;
+    } else {
+      kmEl.textContent = totalKm.toFixed(2);
+    }
     const btnKmEl = document.getElementById('btnKm');
-    if (btnKmEl) btnKmEl.textContent = formatted;
+    if (btnKmEl) btnKmEl.textContent = totalKm.toFixed(2);
   }
 
   // ==========================================
-  // 4. TRYB NAGRYWANIA TRASY NA ŻYWO
+  // 4. SYNTEZATOR MOWY (PILOT GŁOSOWY PO POLSKU)
+  // ==========================================
+  function speakPolish(text, key = '') {
+    if (!text) return;
+    if (key && key === lastSpokenKey) return;
+    if (key) lastSpokenKey = key;
+
+    const banner = document.getElementById('voiceAlertBanner');
+    if (banner && mode === 'DRIVING') {
+      banner.style.display = 'block';
+      banner.textContent = `🗣️ ${text}`;
+      clearTimeout(banner._hideTimer);
+      banner._hideTimer = setTimeout(() => {
+        if (mode === 'DRIVING') banner.style.display = 'none';
+      }, 4500);
+    }
+
+    try {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.lang = 'pl-PL';
+        utter.rate = 1.03;
+        utter.pitch = 1.0;
+        window.speechSynthesis.speak(utter);
+      }
+    } catch (e) {
+      console.warn('Syntezator mowy niedostępny:', e);
+    }
+  }
+
+  // ==========================================
+  // 5. ANALIZA GEOMETRII TRASY (ZAKRĘTY, PROSTO, KONIEC)
+  // ==========================================
+  function buildRouteManeuvers(points) {
+    if (!Array.isArray(points) || points.length < 3) return [];
+
+    // Wyznaczanie kursów między punktami oddalonymi o min. ~8 m
+    const segs = [];
+    for (let i = 0; i < points.length - 1; i++) {
+      const p1 = points[i];
+      const p2 = points[i + 1];
+      const distKm = calcDistanceKm(p1.lat, p1.lng, p2.lat, p2.lng);
+      if (distKm * 1000 < 8) continue;
+      segs.push({
+        index: i,
+        lat1: p1.lat,
+        lng1: p1.lng,
+        lat2: p2.lat,
+        lng2: p2.lng,
+        km1: p1.km || 0,
+        km2: p2.km || 0,
+        bearing: calcBearingDeg(p1.lat, p1.lng, p2.lat, p2.lng)
+      });
+    }
+
+    const maneuvers = [];
+    for (let i = 0; i < segs.length - 1; i++) {
+      const prev = segs[i];
+      const next = segs[i + 1];
+      const turn = signedAngleDiff(prev.bearing, next.bearing);
+      const absTurn = Math.abs(turn);
+
+      // Zakręt wykrywamy przy zmianie kierunku co najmniej 28 stopni
+      if (absTurn >= 28) {
+        let type = 'straight';
+        let arrow = '↑';
+        let label = 'Jedź prosto';
+        let spoken = 'Jedź prosto';
+
+        if (turn <= -28 && turn > -70) {
+          type = 'slight-left';
+          arrow = '↖';
+          label = 'Łagodnie w lewo';
+          spoken = 'łagodnie w lewo';
+        } else if (turn <= -70 && turn > -125) {
+          type = 'left';
+          arrow = '←';
+          label = 'Skręć w lewo';
+          spoken = 'w lewo';
+        } else if (turn <= -125) {
+          type = 'sharp-left';
+          arrow = '↩';
+          label = 'Ostro w lewo';
+          spoken = 'ostro w lewo';
+        } else if (turn >= 28 && turn < 70) {
+          type = 'slight-right';
+          arrow = '↗';
+          label = 'Łagodnie w prawo';
+          spoken = 'łagodnie w prawo';
+        } else if (turn >= 70 && turn < 125) {
+          type = 'right';
+          arrow = '→';
+          label = 'Skręć w prawo';
+          spoken = 'w prawo';
+        } else if (turn >= 125) {
+          type = 'sharp-right';
+          arrow = '↪';
+          label = 'Ostro w prawo';
+          spoken = 'ostro w prawo';
+        }
+
+        // Scalanie bardzo bliskich punktów (poniżej 35 m) w jeden manewr
+        const prevManeuver = maneuvers[maneuvers.length - 1];
+        if (prevManeuver) {
+          const d = calcDistanceKm(prevManeuver.lat, prevManeuver.lng, next.lat1, next.lng1) * 1000;
+          if (d < 35 && prevManeuver.type === type) {
+            continue;
+          }
+        }
+
+        maneuvers.push({
+          id: `m_${maneuvers.length}`,
+          pointIndex: next.index,
+          lat: next.lat1,
+          lng: next.lng1,
+          km: next.km1,
+          type,
+          arrow,
+          label,
+          spoken,
+          angle: turn
+        });
+      }
+    }
+
+    // Dodanie punktu końca trasy
+    const lastPt = points[points.length - 1];
+    maneuvers.push({
+      id: 'm_finish',
+      pointIndex: points.length - 1,
+      lat: lastPt.lat,
+      lng: lastPt.lng,
+      km: lastPt.km || routeTotalKm,
+      type: 'finish',
+      arrow: '🏁',
+      label: 'Koniec trasy',
+      spoken: 'koniec trasy',
+      angle: 0
+    });
+
+    return maneuvers;
+  }
+
+  function findClosestRoutePointIndex(lat, lng, points) {
+    let bestIdx = 0;
+    let bestDistMeters = Infinity;
+    for (let i = 0; i < points.length; i++) {
+      const d = calcDistanceKm(lat, lng, points[i].lat, points[i].lng) * 1000;
+      if (d < bestDistMeters) {
+        bestDistMeters = d;
+        bestIdx = i;
+      }
+    }
+    return { index: bestIdx, distMeters: bestDistMeters };
+  }
+
+  function updateNavigationGuidance(lat, lng) {
+    if (mode !== 'DRIVING' || !recordedPoints.length) return;
+
+    const bar = document.getElementById('navManeuverBar');
+    const arrowEl = document.getElementById('navArrowIcon');
+    const distEl = document.getElementById('navDistanceText');
+    const titleEl = document.getElementById('navManeuverTitle');
+    const subEl = document.getElementById('navSubInfo');
+
+    bar.classList.add('active');
+    bar.classList.remove('turn-soon', 'off-route');
+
+    const startPt = recordedPoints[0];
+    const distToStartMeters = calcDistanceKm(lat, lng, startPt.lat, startPt.lng) * 1000;
+
+    // 1. Naprowadzanie na start trasy, jeśli kierowca jest jeszcze ponad 120 m od początku i jeszcze nie wszedł na trasę
+    const closest = findClosestRoutePointIndex(lat, lng, recordedPoints);
+    if (!startedRouteAnnounced && distToStartMeters > 120 && closest.distMeters > 120) {
+      const bearing = calcBearingDeg(lat, lng, startPt.lat, startPt.lng);
+      const dirText = bearingToCompassPl(bearing);
+      const distLabel = formatMeters(distToStartMeters);
+
+      arrowEl.textContent = '🧭';
+      distEl.textContent = distLabel;
+      titleEl.textContent = `Jedź na start (${dirText})`;
+      subEl.textContent = `Odległość do początku trasy: ${formatMetersExact(distToStartMeters)}`;
+
+      speakPolish(
+        `Do punktu startu trasy ${distLabel}, kierunek ${dirText}.`,
+        `start_${Math.round(distToStartMeters / 150)}_${dirText}`
+      );
+      return;
+    }
+
+    startedRouteAnnounced = true;
+    const currentKm = closest.index < recordedPoints.length ? (recordedPoints[closest.index].km || 0) : 0;
+    updateKmUI(currentKm, routeTotalKm);
+
+    // 2. Sprawdzenie zjechania z trasy (powyżej 70 m od śladu)
+    if (closest.distMeters > 70) {
+      bar.classList.add('off-route');
+      arrowEl.textContent = '!';
+      distEl.textContent = formatMeters(closest.distMeters);
+      titleEl.textContent = 'Poza trasą! Wróć na odcinek';
+      subEl.textContent = `Odchylenie od trasy: ${Math.round(closest.distMeters)} m`;
+
+      const now = Date.now();
+      if (now - lastOffRouteWarningAt > 12000) {
+        lastOffRouteWarningAt = now;
+        speakPolish('Uwaga, zjechałeś z wyznaczonej trasy.', 'off_route');
+      }
+      return;
+    }
+
+    // 3. Wyznaczenie kolejnego manewru (zakrętu lub końca trasy) przed kierowcą
+    const upcoming = routeManeuvers.find(m => m.pointIndex >= closest.index);
+    if (!upcoming) {
+      arrowEl.textContent = '↑';
+      distEl.textContent = '0 m';
+      titleEl.textContent = 'Jedź prosto';
+      subEl.textContent = `Odcinek ${currentKm.toFixed(2)} / ${routeTotalKm.toFixed(2)} km`;
+      return;
+    }
+
+    const distToManeuverMeters = calcDistanceKm(lat, lng, upcoming.lat, upcoming.lng) * 1000;
+    const isTurn = upcoming.type !== 'finish';
+    const isClose = distToManeuverMeters <= 130;
+
+    if (isClose && isTurn) {
+      bar.classList.add('turn-soon');
+    }
+
+    if (upcoming.type === 'finish') {
+      arrowEl.textContent = distToManeuverMeters <= 120 ? '🏁' : '↑';
+      distEl.textContent = formatMeters(distToManeuverMeters);
+      titleEl.textContent = distToManeuverMeters <= 120 ? 'Zbliżasz się do końca' : 'Jedź prosto';
+      subEl.textContent = `Do końca trasy: ${formatMetersExact(distToManeuverMeters)} • ${currentKm.toFixed(2)}/${routeTotalKm.toFixed(2)} km`;
+
+      if (distToManeuverMeters <= 60 && !finishedRouteAnnounced) {
+        finishedRouteAnnounced = true;
+        speakPolish('Koniec wyznaczonej trasy.', 'finish_route');
+      } else if (distToManeuverMeters <= 130) {
+        speakPolish(`Za ${Math.round(distToManeuverMeters / 10) * 10} metrów koniec trasy.`, 'finish_soon');
+      }
+      return;
+    }
+
+    // Standardowa jazda prosto gdy do zakrętu jest jeszcze powyżej 160 m
+    if (distToManeuverMeters > 160) {
+      arrowEl.textContent = '↑';
+      distEl.textContent = formatMeters(distToManeuverMeters);
+      titleEl.textContent = `Jedź prosto (potem ${upcoming.label.toLowerCase()})`;
+      subEl.textContent = `Następny manewr za ${formatMetersExact(distToManeuverMeters)} • ${currentKm.toFixed(2)}/${routeTotalKm.toFixed(2)} km`;
+      speakPolish('Jedź prosto', 'straight_ahead');
+    } else {
+      // Zbliżanie się do zakrętu (<= 160 m) – wyraźna strzałka, dystans i komunikat głosowy
+      arrowEl.textContent = upcoming.arrow;
+      distEl.textContent = formatMeters(distToManeuverMeters);
+      titleEl.textContent = upcoming.label;
+      subEl.textContent = `Manewr za ${formatMetersExact(distToManeuverMeters)} • ${currentKm.toFixed(2)}/${routeTotalKm.toFixed(2)} km`;
+
+      const bucket = distToManeuverMeters <= 45 ? 'now' : (distToManeuverMeters <= 95 ? '70m' : '140m');
+      const spokenText = bucket === 'now'
+        ? `Teraz ${upcoming.spoken}`
+        : `Za ${Math.round(distToManeuverMeters / 10) * 10} metrów ${upcoming.spoken}`;
+
+      speakPolish(spokenText, `${upcoming.id}_${bucket}`);
+    }
+  }
+
+  // ==========================================
+  // 6. TRYB NAGRYWANIA TRASY NA ŻYWO
   // ==========================================
   async function requestWakeLock() {
     try {
@@ -733,6 +1144,11 @@
         if (ctx.state === 'suspended') ctx.resume();
         audioUnlocked = true;
       }
+      if ('speechSynthesis' in window) {
+        const warm = new SpeechSynthesisUtterance('');
+        warm.lang = 'pl-PL';
+        window.speechSynthesis.speak(warm);
+      }
     } catch (e) {}
   }
 
@@ -741,12 +1157,14 @@
     routeMarkers.forEach(m => map.removeLayer(m));
     routeMarkers = [];
     document.getElementById('notesBar').innerHTML = '';
+    document.getElementById('navManeuverBar').classList.remove('active', 'turn-soon', 'off-route');
   }
 
   function startRecordingRoute() {
     document.getElementById('adminModal').style.display = 'none';
     mode = 'RECORDING';
     recordedPoints = [];
+    routeManeuvers = [];
     voiceNotes = [];
     totalKm = 0;
     updateKmUI();
@@ -801,12 +1219,13 @@
         updateKmUI();
       }
     } else if (mode === 'DRIVING') {
+      updateNavigationGuidance(lat, lng);
       checkProximityToVoiceNotes(lat, lng);
     }
   }
 
   // ==========================================
-  // 5. NAGRYWANIE KOMENTARZY GŁOSOWYCH (PTT)
+  // 7. NAGRYWANIE KOMENTARZY GŁOSOWYCH (PTT)
   // ==========================================
   const btnRecordVoice = document.getElementById('btnRecordVoice');
 
@@ -893,6 +1312,9 @@
 
   function playAudioNote(note) {
     if (!note.audioBlob) return;
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
     const url = URL.createObjectURL(note.audioBlob);
     const audio = new Audio(url);
     const banner = document.getElementById('voiceAlertBanner');
@@ -909,7 +1331,7 @@
   }
 
   // ==========================================
-  // 6. ZAPIS TRASY
+  // 8. ZAPIS TRASY
   // ==========================================
   document.getElementById('btnFinishRecord').onclick = () => {
     document.getElementById('modalKm').textContent = totalKm.toFixed(2);
@@ -939,6 +1361,12 @@
 
   function resetToIdle() {
     mode = 'IDLE';
+    lastSpokenKey = '';
+    startedRouteAnnounced = false;
+    finishedRouteAnnounced = false;
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
     if (watchId !== null) {
       navigator.geolocation.clearWatch(watchId);
       watchId = null;
@@ -946,13 +1374,15 @@
     document.getElementById('idleControls').style.display = 'flex';
     document.getElementById('recordControls').style.display = 'none';
     document.getElementById('driveControls').style.display = 'none';
+    document.getElementById('voiceAlertBanner').style.display = 'none';
+    document.getElementById('navManeuverBar').classList.remove('active', 'turn-soon', 'off-route');
     const badge = document.getElementById('statusBadge');
     badge.textContent = 'Gotowy';
     badge.className = 'status-pill';
   }
 
   // ==========================================
-  // 7. PANEL ADMINISTRATORA (EKSPORT / IMPORT / USUWANIE)
+  // 9. PANEL ADMINISTRATORA (EKSPORT / IMPORT / USUWANIE)
   // ==========================================
   async function refreshSavedRoutesDropdowns() {
     const routes = await getAllRoutesFromDB();
@@ -1093,7 +1523,7 @@
   };
 
   // ==========================================
-  // 8. TRYB KIEROWCY (ODTWARZANIE TRASY)
+  // 10. TRYB KIEROWCY (ODTWARZANIE TRASY + PILOTAŻ)
   // ==========================================
   document.getElementById('btnLoadRoute').onclick = async () => {
     const id = Number(document.getElementById('savedRoutesSelect').value);
@@ -1105,13 +1535,18 @@
     if (!selected) return;
 
     mode = 'DRIVING';
+    lastSpokenKey = '';
+    startedRouteAnnounced = false;
+    finishedRouteAnnounced = false;
     clearMapOverlays();
     requestWakeLock();
 
-    recordedPoints = selected.points;
-    voiceNotes = selected.notes.map(n => ({ ...n, played: false }));
-    totalKm = selected.totalKm;
-    updateKmUI();
+    recordedPoints = selected.points || [];
+    routeTotalKm = Number(selected.totalKm || 0);
+    routeManeuvers = buildRouteManeuvers(recordedPoints);
+    voiceNotes = (selected.notes || []).map(n => ({ ...n, played: false }));
+    totalKm = routeTotalKm;
+    updateKmUI(0, routeTotalKm);
 
     if (map && polyline) {
       const latLngs = recordedPoints.map(p => [p.lat, p.lng]);
@@ -1127,12 +1562,19 @@
 
     document.getElementById('idleControls').style.display = 'none';
     document.getElementById('driveControls').style.display = 'flex';
+    document.getElementById('navManeuverBar').classList.add('active');
     const badge = document.getElementById('statusBadge');
     badge.textContent = selected.name;
     badge.className = 'status-pill drive';
     simDriveIndex = 0;
 
     if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => handleNewGpsPoint(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy, { allowLowAccuracy: true }),
+        () => {},
+        { enableHighAccuracy: true, maximumAge: 1000, timeout: 8000 }
+      );
+
       watchId = navigator.geolocation.watchPosition(
         (pos) => handleNewGpsPoint(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy),
         (err) => console.warn('Błąd GPS:', err),
@@ -1155,12 +1597,13 @@
   document.getElementById('btnExitDrive').onclick = () => {
     clearMapOverlays();
     totalKm = 0;
+    routeTotalKm = 0;
     updateKmUI();
     resetToIdle();
   };
 
   // ==========================================
-  // 9. SYMULATOR DO TESTÓW PRZY BIURKU
+  // 11. SYMULATOR DO TESTÓW PRZY BIURKU
   // ==========================================
   document.getElementById('btnSimStep').onclick = () => {
     simLat += 0.0011;
@@ -1172,8 +1615,6 @@
     if (recordedPoints.length === 0) return;
     if (simDriveIndex >= recordedPoints.length) simDriveIndex = 0;
     const pt = recordedPoints[simDriveIndex];
-    totalKm = pt.km;
-    updateKmUI();
     handleNewGpsPoint(pt.lat, pt.lng);
     simDriveIndex++;
   };
